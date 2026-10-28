@@ -9,9 +9,10 @@ const userSchema = new mongoose.Schema({
         trim: true
     },
     userName: {
-        type: String,
-        required: true,
-        trim: true
+    type: String,
+    required: true,
+    trim: true,
+    minlength: [2, "Name must contain at least 2 characters"]
     },
     userEmail: {
         type: String,

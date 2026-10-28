@@ -1,0 +1,241 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Management System</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>User Management System</h1>
+        <p class="subtitle">Manage user records using Node.js, Express and MongoDB.</p>
+
+        <section class="form-card">
+            <h2 id="formTitle">Add New User</h2>
+
+            <form id="userForm">
+                <label for="userUniqueId">User ID</label>
+                <input id="userUniqueId" placeholder="Enter unique user ID" required>
+
+                <label for="userName">Full Name</label>
+                <input id="userName" placeholder="Enter full name" minlength="2" required>  
+
+
+                <label for="userEmail">Email</label>
+                <input id="userEmail" type="email" placeholder="Enter email address" required>
+
+                <label for="userAge">Age</label>
+                <input id="userAge" type="number" min="1" max="120"
+                    placeholder="Enter age" required>
+
+                <div class="actions">
+                    <button type="submit" id="submitButton">Add User</button>
+                    <button type="button" id="cancelButton" class="secondary" hidden>
+                        Cancel Edit
+                    </button>
+                </div>
+            </form>
+            <p id="message" role="status"></p>
+        </section>
+
+        <section class="table-card">
+            <div class="table-heading">
+                <h2>All Users</h2>
+                <button type="button" id="refreshButton" class="secondary">
+                    Refresh
+                </button>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>User ID</th>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Age</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="userTable">
+                        <tr><td colspan="5">Loading users...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        const API_URL = "/api/users";
+        const form = document.getElementById("userForm");
+        const table = document.getElementById("userTable");
+        const message = document.getElementById("message");
+        const idInput = document.getElementById("userUniqueId");
+
+        let editingId = null;
+
+        function showMessage(text, isError = false) {
+            message.textContent = text;
+            message.className = isError ? "error" : "success";
+        }
+
+        async function request(url, options = {}) {
+            const response = await fetch(url, options);
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.message || "Something went wrong.");
+            }
+
+            return result;
+        }
+
+        async function loadUsers() {
+            table.replaceChildren();
+
+            try {
+                const result = await request(API_URL);
+                const users = result.data || [];
+
+                if (users.length === 0) {
+                    const row = table.insertRow();
+                    const cell = row.insertCell();
+                    cell.colSpan = 5;
+                    cell.textContent = "No users found. Add a user above.";
+                    return;
+                }
+
+                users.forEach(user => {
+                    const row = table.insertRow();
+
+                    [user.userUniqueId, user.userName,
+                     user.userEmail, user.userAge].forEach(value => {
+                        const cell = row.insertCell();
+                        cell.textContent = value ?? "";
+                    });
+
+                    const actions = row.insertCell();
+
+                    const editButton = document.createElement("button");
+                    editButton.textContent = "Edit";
+                    editButton.className = "edit";
+                    editButton.addEventListener("click", () => editUser(user));
+
+                    const deleteButton = document.createElement("button");
+                    deleteButton.textContent = "Delete";
+                    deleteButton.className = "delete";
+                    deleteButton.addEventListener("click", () =>
+                        deleteUser(user.userUniqueId)
+                    );
+
+                    actions.append(editButton, deleteButton);
+                });
+            } catch (error) {
+                const row = table.insertRow();
+                const cell = row.insertCell();
+                cell.colSpan = 5;
+                cell.textContent = error.message;
+                showMessage("Could not load users. Check the server and database.", true);
+            }
+        }
+
+        form.addEventListener("submit", async event => {
+            event.preventDefault();
+
+            const user = {
+                userUniqueId: idInput.value.trim(),
+                userName: document.getElementById("userName").value.trim(),
+                userEmail: document.getElementById("userEmail").value.trim(),
+                userAge: Number(document.getElementById("userAge").value)
+            };
+
+            if (!user.userUniqueId ||user.userName.length < 2 ||!user.userEmail ||
+            !Number.isInteger(user.userAge) ||user.userAge < 1 ||user.userAge > 120) {
+            showMessage(
+                "Name must contain at least 2 characters. Please check all fields.",
+                true
+            );
+            return;
+            }
+
+            try {
+                const isEditing = editingId !== null;
+                const url = isEditing
+                    ? `${API_URL}/${encodeURIComponent(editingId)}`
+                    : API_URL;
+
+                const payload = isEditing
+                    ? {
+                        userName: user.userName,
+                        userEmail: user.userEmail,
+                        userAge: user.userAge
+                    }
+                    : user;
+
+                const result = await request(url, {
+                    method: isEditing ? "PUT" : "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+
+                showMessage(result.message || "Operation completed successfully.");
+                resetForm();
+                await loadUsers();
+            } catch (error) {
+                showMessage(error.message, true);
+            }
+        });
+
+        function editUser(user) {
+            editingId = user.userUniqueId;
+            idInput.value = user.userUniqueId;
+            idInput.disabled = true;
+
+            document.getElementById("userName").value = user.userName;
+            document.getElementById("userEmail").value = user.userEmail;
+            document.getElementById("userAge").value = user.userAge;
+
+            document.getElementById("formTitle").textContent = "Update User";
+            document.getElementById("submitButton").textContent = "Save Changes";
+            document.getElementById("cancelButton").hidden = false;
+
+            form.scrollIntoView({ behavior: "smooth" });
+        }
+
+        async function deleteUser(id) {
+            if (!confirm(`Are you sure you want to delete user ${id}?`)) {
+                return;
+            }
+
+            try {
+                const result = await request(
+                    `${API_URL}/${encodeURIComponent(id)}`,
+                    { method: "DELETE" }
+                );
+
+                showMessage(result.message || "User deleted successfully.");
+                if (editingId === id) resetForm();
+                await loadUsers();
+            } catch (error) {
+                showMessage(error.message, true);
+            }
+        }
+
+        function resetForm() {
+            form.reset();
+            editingId = null;
+            idInput.disabled = false;
+            document.getElementById("formTitle").textContent = "Add New User";
+            document.getElementById("submitButton").textContent = "Add User";
+            document.getElementById("cancelButton").hidden = true;
+        }
+
+        document.getElementById("cancelButton").addEventListener("click", resetForm);
+        document.getElementById("refreshButton").addEventListener("click", loadUsers);
+
+        loadUsers();
+    </script>
+</body>
+</html>
